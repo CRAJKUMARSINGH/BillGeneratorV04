@@ -4,16 +4,16 @@
     <meta charset="UTF-8">
     <title>Extra Items</title>
     <style>
-        body { font-family: Calibri, sans-serif; font-size: 9pt; margin: 0; }
+        body { font-family: Calibri, Arial, sans-serif; font-size: 9pt; margin: 0; color: #111; }
         .container { width: auto; margin: 0; padding: 0; box-sizing: border-box; }
+        .header { text-align: center; margin: 0 0 6px 0; }
+        .header h2 { margin: 0; font-size: 12pt; letter-spacing: 0.2px; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid black; padding: 5px; text-align: left; }
-        .header { text-align: center; }
+        thead th { background: #f2f4f7; font-weight: 600; }
+        th, td { border: 1px solid #000; padding: 4px 5px; text-align: left; }
+        tbody tr:nth-child(odd) { background: #fafafa; }
         @page { size: A4 portrait; margin: 10mm; }
-        @media print {
-          body { margin: 0; }
-          .container { margin: 0; width: auto; }
-        }
+        @media print { body { margin: 0; } .container { margin: 0; width: auto; } }
     </style>
 </head>
 <body>

@@ -5,9 +5,10 @@
     <title>Deviation Statement</title>
     <style>
       body {
-    font-family: Calibri, sans-serif;
+    font-family: Calibri, Arial, sans-serif;
     font-size: 9pt;
     margin: 0;
+    color: #111;
 }
 
 .container {
@@ -23,18 +24,23 @@ table {
     table-layout: fixed;
 }
 
+thead th { background: #f2f4f7; font-weight: 600; }
+
 th, td {
-    border: 1px solid black;
-    padding: 5px;
+    border: 1px solid #000;
+    padding: 4px 5px;
     text-align: left;
     vertical-align: top;
     overflow: hidden;
 }
 
+tbody tr:nth-child(odd) { background: #fafafa; }
+
 .header {
     text-align: center;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
 }
+.header h2 { margin: 0; font-size: 12pt; letter-spacing: 0.2px; }
 
 @page { size: A4 landscape; margin: 10mm; }
 @media print {
