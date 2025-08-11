@@ -1,0 +1,14 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=10mm]{geometry}
+\usepackage{array,longtable}
+\setlength{\parindent}{0pt}
+\begin{document}
+\section*{Extra Items}
+\begin{longtable}{|p{12mm}|p{35mm}|p{80mm}|p{16mm}|p{12mm}|p{16mm}|p{18mm}|}
+\hline
+S.No & Remark & Description & Qty & Unit & Rate & Amount \\ \hline
+\BLOCK{ for item in data.get('items', []) }
+\VAR{ item.get('serial_no','') } & \VAR{ item.get('remark','') } & \VAR{ item.get('description','') } & \VAR{ item.get('quantity','') } & \VAR{ item.get('unit','') } & \VAR{ item.get('rate','') } & \VAR{ item.get('amount','') } \\ \hline
+\BLOCK{ endfor }
+\end{longtable}
+\end{document}

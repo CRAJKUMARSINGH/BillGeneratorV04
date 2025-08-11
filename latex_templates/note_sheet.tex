@@ -1,0 +1,12 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=10mm]{geometry}
+\setlength{\parindent}{0pt}
+\begin{document}
+\section*{Note Sheet}
+Agreement No.: \VAR{ data.get('agreement_no','') } \par
+Name of Work: \VAR{ data.get('name_of_work','') } \par
+Name of Firm: \VAR{ data.get('name_of_firm','') } \par
+\BLOCK{ for note in data.get('notes', []) }
+- \VAR{ note } \par
+\BLOCK{ endfor }
+\end{document}

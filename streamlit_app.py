@@ -15,9 +15,18 @@ import platform
 from datetime import datetime
 import traceback
 from pathlib import Path
+import subprocess
+import shutil
 
 # Set up Jinja2 environment
 env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
+latex_env = Environment(
+    loader=FileSystemLoader("latex_templates"),
+    autoescape=False,
+    block_start_string='\\BLOCK{', block_end_string='}',
+    variable_start_string='\\VAR{', variable_end_string='}',
+    comment_start_string='\\#', comment_end_string='\n',
+)
 
 # Temporary directory
 TEMP_DIR = tempfile.mkdtemp()
@@ -78,6 +87,74 @@ def number_to_words(number):
     except:
         return str(number)
 ##########################################################################################
+# LaTeX helpers
+
+def detect_latex_engine() -> str:
+    for engine in ["tectonic", "xelatex", "pdflatex"]:
+        if shutil.which(engine):
+            return engine
+    return ""
+
+
+def render_latex_template(template_name: str, context: dict) -> str:
+    template = latex_env.get_template(template_name)
+    return template.render(data=context)
+
+
+def compile_latex_to_pdf(tex_content: str, output_basename: str, work_dir: str, engine: str) -> str:
+    os.makedirs(work_dir, exist_ok=True)
+    tex_path = os.path.join(work_dir, f"{output_basename}.tex")
+    with open(tex_path, "w", encoding="utf-8") as f:
+        f.write(tex_content)
+    out_dir = os.path.join(work_dir, "pdf")
+    os.makedirs(out_dir, exist_ok=True)
+
+    try:
+        if engine == "tectonic":
+            subprocess.run([
+                "tectonic", tex_path, "--keep-intermediates", "--outdir", out_dir
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        elif engine in ("xelatex", "pdflatex"):
+            subprocess.run([
+                engine, "-interaction=nonstopmode", "-halt-on-error",
+                f"-output-directory={out_dir}", tex_path
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else:
+            raise RuntimeError("No LaTeX engine available")
+    except Exception as e:
+        raise RuntimeError(f"LaTeX compile failed for {output_basename}: {e}")
+
+    pdf_path = os.path.join(out_dir, f"{output_basename}.pdf")
+    if not os.path.exists(pdf_path):
+        raise RuntimeError(f"Expected PDF not found: {pdf_path}")
+    return pdf_path
+
+
+def generate_latex_outputs(first_page_data: dict, last_page_data: dict, deviation_data: dict, extra_items_data: dict, note_sheet_data: dict, temp_root: str) -> list:
+    engine = detect_latex_engine()
+    outputs = []
+    work_dir = os.path.join(temp_root, "latex_output")
+    os.makedirs(work_dir, exist_ok=True)
+    if not engine:
+        return outputs
+
+    specs = [
+        ("first_page.tex", "First_Page" , first_page_data),
+        ("deviation_statement.tex", "Deviation_Statement", deviation_data),
+        ("note_sheet.tex", "Note_Sheet", note_sheet_data),
+        ("last_page.tex", "Last_Page", last_page_data),
+        ("extra_items.tex", "Extra_Items", extra_items_data),
+    ]
+    for template_name, base, context in specs:
+        try:
+            tex = render_latex_template(template_name, context)
+            pdf_path = compile_latex_to_pdf(tex, base, work_dir, engine)
+            outputs.append(pdf_path)
+        except Exception:
+            continue
+    return outputs
+##########################################################################################
+
 def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
     first_page_data = {"header": [], "items": [], "totals": {}}
     last_page_data = {"payable_amount": 0, "amount_words": ""}
@@ -103,7 +180,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
 
     # Assign to first page
     first_page_data["header"] = header_data
-############################################################################################################
+    ############################################################################################################
     # Work Order items
     last_row_wo = ws_wo.shape[0]
     for i in range(21, last_row_wo):
@@ -636,6 +713,11 @@ if uploaded_file is not None and st.button("Generate Bill"):
             create_word_doc(sheet_name, data, doc_path)
             word_files.append(doc_path)
 
+        # Generate LaTeX PDFs (if engine present)
+        latex_pdf_files = generate_latex_outputs(
+            first_page_data, last_page_data, deviation_data, extra_items_data, note_sheet_data, TEMP_DIR
+        )
+
         # Create ZIP
         zip_path = os.path.join(TEMP_DIR, "bill_output.zip")
         try:
@@ -654,6 +736,11 @@ if uploaded_file is not None and st.button("Generate Bill"):
                         zipf.write(pdf_path, os.path.basename(pdf_path))
                     if os.path.exists(html_path):
                         zipf.write(html_path, os.path.basename(html_path))
+                # include LaTeX outputs under separate folder
+                for latex_pdf in latex_pdf_files:
+                    if os.path.exists(latex_pdf):
+                        arcname = os.path.join("latex", os.path.basename(latex_pdf))
+                        zipf.write(latex_pdf, arcname)
             with open(zip_path, "rb") as f:
                 st.download_button(
                     label="Download Bill Output",

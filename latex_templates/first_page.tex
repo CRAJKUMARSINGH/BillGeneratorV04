@@ -1,0 +1,18 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=10mm]{geometry}
+\usepackage{array,longtable}
+\usepackage{xeCJK}
+\setlength{\parindent}{0pt}
+\begin{document}
+\section*{First Page}
+\BLOCK{ for row in data.get('header', []) }
+\VAR{ ' '.join([str(x) for x in row if str(x).strip()]) } \par
+\BLOCK{ endfor }
+\begin{longtable}{|p{15mm}|p{18mm}|p{18mm}|p{12mm}|p{74mm}|p{16mm}|p{22mm}|p{18mm}|p{14mm}|}
+\hline
+Unit & Qty since last & Qty upto date & Item No. & Description & Rate & Amt upto date & Amt since prev & Remark \\ \hline
+\BLOCK{ for item in data.get('items', []) }
+\VAR{ item.get('unit','') } & \VAR{ item.get('quantity_since_last','') } & \VAR{ item.get('quantity_upto_date', item.get('quantity','')) } & \VAR{ item.get('serial_no','') } & \VAR{ item.get('description','') } & \VAR{ item.get('rate','') } & \VAR{ item.get('amount','') } & \VAR{ item.get('amount_previous','') } & \VAR{ item.get('remark','') } \\ \hline
+\BLOCK{ endfor }
+\end{longtable}
+\end{document}
