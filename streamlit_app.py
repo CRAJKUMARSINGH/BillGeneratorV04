@@ -14,19 +14,72 @@ import numpy as np
 import platform
 from datetime import datetime
 import traceback
+from pathlib import Path
+import subprocess
+import shutil
 
 # Set up Jinja2 environment
 env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
+latex_env = Environment(
+    loader=FileSystemLoader("latex_templates"),
+    autoescape=False,
+    block_start_string='\\BLOCK{', block_end_string='}',
+    variable_start_string='\\VAR{', variable_end_string='}',
+    comment_start_string='\\#', comment_end_string='\n',
+)
 
 # Temporary directory
 TEMP_DIR = tempfile.mkdtemp()
 
 # Configure wkhtmltopdf
 if platform.system() == "Windows":
-    wkhtmltopdf_path = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+    wkhtmltopdf_path = r"C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe"
     config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
 else:
     config = pdfkit.configuration()
+
+
+def load_custom_theme_assets():
+    css_file = Path("assets/style.css")
+    js_file = Path("assets/balloon.js")
+    if css_file.exists():
+        with open(css_file, "r", encoding="utf-8") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    if js_file.exists():
+        with open(js_file, "r", encoding="utf-8") as f:
+            st.markdown(f"<script>{f.read()}</script>", unsafe_allow_html=True)
+
+
+def render_header_with_logo_and_balloons():
+    st.markdown(
+        """
+        <div class="header-container">
+            <h1 class="main-title">🧾 Professional Bill Generator</h1>
+            <div class="balloon-container">
+                <div class="balloon balloon1">🎈</div>
+                <div class="balloon balloon2">🎈</div>
+                <div class="balloon balloon3">🎈</div>
+            </div>
+            <p class="subtitle">An Initiative by Mrs. Premlata Jain, Additional Administrative Officer, PWD, Udaipur</p>
+            <div class="wishes-message">
+                <p>✨ Best Wishes for Professional Excellence ✨</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_footer_credit():
+    st.markdown(
+        """
+        <div style="margin-top:2rem; text-align:center; opacity:0.8; font-size:0.9rem;">
+            Built with ❤️ by the community. Credits: Theme styling and balloons adapted from CRAJKUMARSINGH/BillGeneratorV02.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def number_to_words(number):
     try:
@@ -34,8 +87,75 @@ def number_to_words(number):
     except:
         return str(number)
 ##########################################################################################
+# LaTeX helpers
+
+def detect_latex_engine() -> str:
+    for engine in ["tectonic", "xelatex", "pdflatex"]:
+        if shutil.which(engine):
+            return engine
+    return ""
+
+
+def render_latex_template(template_name: str, context: dict) -> str:
+    template = latex_env.get_template(template_name)
+    return template.render(data=context)
+
+
+def compile_latex_to_pdf(tex_content: str, output_basename: str, work_dir: str, engine: str) -> str:
+    os.makedirs(work_dir, exist_ok=True)
+    tex_path = os.path.join(work_dir, f"{output_basename}.tex")
+    with open(tex_path, "w", encoding="utf-8") as f:
+        f.write(tex_content)
+    out_dir = os.path.join(work_dir, "pdf")
+    os.makedirs(out_dir, exist_ok=True)
+
+    try:
+        if engine == "tectonic":
+            subprocess.run([
+                "tectonic", tex_path, "--keep-intermediates", "--outdir", out_dir
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        elif engine in ("xelatex", "pdflatex"):
+            subprocess.run([
+                engine, "-interaction=nonstopmode", "-halt-on-error",
+                f"-output-directory={out_dir}", tex_path
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else:
+            raise RuntimeError("No LaTeX engine available")
+    except Exception as e:
+        raise RuntimeError(f"LaTeX compile failed for {output_basename}: {e}")
+
+    pdf_path = os.path.join(out_dir, f"{output_basename}.pdf")
+    if not os.path.exists(pdf_path):
+        raise RuntimeError(f"Expected PDF not found: {pdf_path}")
+    return pdf_path
+
+
+def generate_latex_outputs(first_page_data: dict, last_page_data: dict, deviation_data: dict, extra_items_data: dict, note_sheet_data: dict, temp_root: str) -> list:
+    engine = detect_latex_engine()
+    outputs = []
+    work_dir = os.path.join(temp_root, "latex_output")
+    os.makedirs(work_dir, exist_ok=True)
+    if not engine:
+        return outputs
+
+    specs = [
+        ("first_page.tex", "First_Page" , first_page_data),
+        ("deviation_statement.tex", "Deviation_Statement", deviation_data),
+        ("note_sheet.tex", "Note_Sheet", note_sheet_data),
+        ("last_page.tex", "Last_Page", last_page_data),
+        ("extra_items.tex", "Extra_Items", extra_items_data),
+    ]
+    for template_name, base, context in specs:
+        try:
+            tex = render_latex_template(template_name, context)
+            pdf_path = compile_latex_to_pdf(tex, base, work_dir, engine)
+            outputs.append(pdf_path)
+        except Exception:
+            continue
+    return outputs
+##########################################################################################
+
 def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
-    st.write("Starting process_bill")
     first_page_data = {"header": [], "items": [], "totals": {}}
     last_page_data = {"payable_amount": 0, "amount_words": ""}
     deviation_data = {"items": [], "summary": {}}
@@ -60,7 +180,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
 
     # Assign to first page
     first_page_data["header"] = header_data
-############################################################################################################
+    ############################################################################################################
     # Work Order items
     last_row_wo = ws_wo.shape[0]
     for i in range(21, last_row_wo):
@@ -186,7 +306,6 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
     overall_excess = 0
     overall_saving = 0
     for i in range(21, last_row_wo):
-        st.write(f"Processing deviation row {i+1}: wo_qty={ws_wo.iloc[i, 3]}, wo_rate={ws_wo.iloc[i, 4]}, bq_qty={ws_bq.iloc[i, 3] if i < ws_bq.shape[0] else 'N/A'}")
         qty_wo_raw = ws_wo.iloc[i, 3] if pd.notnull(ws_wo.iloc[i, 3]) else None
         rate_raw = ws_wo.iloc[i, 4] if pd.notnull(ws_wo.iloc[i, 4]) else None
         qty_bill_raw = ws_bq.iloc[i, 3] if i < ws_bq.shape[0] and pd.notnull(ws_bq.iloc[i, 3]) else None
@@ -277,11 +396,8 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
         "grand_total_j": grand_total_j,
         "grand_total_l": grand_total_l,
         "net_difference": round(net_difference)
-    }
-
-    st.write(f"first_page_data['items'] type: {type(first_page_data['items'])}, length: {len(first_page_data['items'])}")
-    st.write(f"extra_items_data['items'] type: {type(extra_items_data['items'])}, length: {len(extra_items_data['items'])}")
-    st.write(f"deviation_data['items'] type: {type(deviation_data['items'])}, length: {len(deviation_data['items'])}")
+        }
+    
     return first_page_data, last_page_data, deviation_data, extra_items_data, note_sheet_data
 ########################################################################################################################################################
 def generate_bill_notes(payable_amount, work_order_amount, extra_item_amount):
@@ -315,7 +431,6 @@ def generate_bill_notes(payable_amount, work_order_amount, extra_item_amount):
     return {"notes": note}
 
 def generate_pdf(sheet_name, data, orientation, output_path):
-    st.write(f"Generating PDF for {sheet_name}, data type: {type(data)}, items type: {type(data.get('items', []))}, totals.premium.percent: {data.get('totals', {}).get('premium', {}).get('percent', 'N/A')}")
     try:
         template = env.get_template(f"{sheet_name.lower().replace(' ', '_')}.html")
         html_content = template.render(data=data)
@@ -334,7 +449,12 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             "margin-left": "10mm",
             "margin-right": "10mm",
             "print-media-type": None,
-            "enable-local-file-access": None
+            "enable-local-file-access": None,
+            "disable-smart-shrinking": None,
+            "zoom": "1.0",
+            "dpi": 300,
+            "image-dpi": 300,
+            "image-quality": 100
         }
         pdfkit.from_string(
             html_content,
@@ -342,14 +462,11 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             configuration=config,
             options=options
         )
-        st.write(f"Finished PDF for {sheet_name}")
     except Exception as e:
         st.error(f"Error generating PDF for {sheet_name}: {str(e)}")
-        st.write(traceback.format_exc())
         raise
 
 def create_word_doc(sheet_name, data, doc_path):
-    st.write(f"Creating Word doc for {sheet_name}")
     try:
         doc = Document()
         # Page setup: A4, 10mm margins, orientation by sheet
@@ -457,14 +574,13 @@ def create_word_doc(sheet_name, data, doc_path):
             for note in data.get("notes", []):
                 doc.add_paragraph(str(note))
         doc.save(doc_path)
-        st.write(f"Finished Word doc for {sheet_name}")
     except Exception as e:
         st.error(f"Error creating Word doc for {sheet_name}: {str(e)}")
         raise
 
 # Streamlit app
-st.title("Bill Generator")
-st.write("Upload an Excel file and enter tender premium details.")
+load_custom_theme_assets()
+render_header_with_logo_and_balloons()
 
 uploaded_file = st.file_uploader("Choose an Excel file", type="xlsx")
 premium_percent = st.number_input("Tender Premium %", min_value=0.0, max_value=100.0, step=0.01)
@@ -553,9 +669,8 @@ if uploaded_file is not None and st.button("Generate Bill"):
             'extra_item_amount': extra_item_amount,
             'notes': notes,
             'totals': first_page_data.get('totals', {'payable': str(payable_amount)})
-        }
-        st.write(f"Note Sheet data: {note_sheet_data}")
-
+                }
+        
         # Generate PDFs
         pdf_files = []
         for sheet_name, data, orientation in [
@@ -598,6 +713,11 @@ if uploaded_file is not None and st.button("Generate Bill"):
             create_word_doc(sheet_name, data, doc_path)
             word_files.append(doc_path)
 
+        # Generate LaTeX PDFs (if engine present)
+        latex_pdf_files = generate_latex_outputs(
+            first_page_data, last_page_data, deviation_data, extra_items_data, note_sheet_data, TEMP_DIR
+        )
+
         # Create ZIP
         zip_path = os.path.join(TEMP_DIR, "bill_output.zip")
         try:
@@ -616,6 +736,11 @@ if uploaded_file is not None and st.button("Generate Bill"):
                         zipf.write(pdf_path, os.path.basename(pdf_path))
                     if os.path.exists(html_path):
                         zipf.write(html_path, os.path.basename(html_path))
+                # include LaTeX outputs under separate folder
+                for latex_pdf in latex_pdf_files:
+                    if os.path.exists(latex_pdf):
+                        arcname = os.path.join("latex", os.path.basename(latex_pdf))
+                        zipf.write(latex_pdf, arcname)
             with open(zip_path, "rb") as f:
                 st.download_button(
                     label="Download Bill Output",
@@ -623,6 +748,7 @@ if uploaded_file is not None and st.button("Generate Bill"):
                     file_name="bill_output.zip",
                     mime="application/zip"
                 )
+            render_footer_credit()
         except Exception as e:
             st.error(f"Error creating ZIP file: {str(e)}")
 
@@ -635,4 +761,3 @@ if uploaded_file is not None and st.button("Generate Bill"):
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        st.write(traceback.format_exc())

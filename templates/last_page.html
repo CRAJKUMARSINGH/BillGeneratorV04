@@ -4,17 +4,15 @@
     <meta charset="UTF-8">
     <title>Last Page Summary</title>
     <style>
-        body { font-family: Calibri, sans-serif; font-size: 11pt; margin: 0; }
-        .container { width: 190mm; min-height: 277mm; margin: 10mm auto; padding: 0; box-sizing: border-box; }
-        .header { text-align: center; margin-bottom: 15mm; }
-        .content { width: 100%; max-width: 190mm; }
-        .row { display: flex; justify-content: space-between; margin: 6mm 0; }
-        .label { font-weight: bold; }
+        body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; margin: 0; color: #111; }
+        .container { width: auto; margin: 0; padding: 0; box-sizing: border-box; }
+        .header { text-align: center; margin: 0 0 8mm 0; }
+        .header h2 { margin: 0; font-size: 14pt; letter-spacing: 0.3px; }
+        .content { width: 100%; }
+        .row { display: flex; justify-content: space-between; gap: 8mm; margin: 4mm 0; padding: 2mm 0; border-bottom: 1px dashed #999; }
+        .label { font-weight: 600; }
         @page { size: A4 portrait; margin: 10mm; }
-        @media print {
-          body { margin: 0; }
-          .container { margin: 10mm; width: 190mm; min-height: 277mm; }
-        }
+        @media print { body { margin: 0; } .container { margin: 0; width: auto; } }
     </style>
 </head>
 <body>
