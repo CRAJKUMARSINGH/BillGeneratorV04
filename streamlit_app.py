@@ -35,7 +35,6 @@ def number_to_words(number):
         return str(number)
 ##########################################################################################
 def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
-    st.write("Starting process_bill")
     first_page_data = {"header": [], "items": [], "totals": {}}
     last_page_data = {"payable_amount": 0, "amount_words": ""}
     deviation_data = {"items": [], "summary": {}}
@@ -186,7 +185,6 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
     overall_excess = 0
     overall_saving = 0
     for i in range(21, last_row_wo):
-        st.write(f"Processing deviation row {i+1}: wo_qty={ws_wo.iloc[i, 3]}, wo_rate={ws_wo.iloc[i, 4]}, bq_qty={ws_bq.iloc[i, 3] if i < ws_bq.shape[0] else 'N/A'}")
         qty_wo_raw = ws_wo.iloc[i, 3] if pd.notnull(ws_wo.iloc[i, 3]) else None
         rate_raw = ws_wo.iloc[i, 4] if pd.notnull(ws_wo.iloc[i, 4]) else None
         qty_bill_raw = ws_bq.iloc[i, 3] if i < ws_bq.shape[0] and pd.notnull(ws_bq.iloc[i, 3]) else None
@@ -277,11 +275,8 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
         "grand_total_j": grand_total_j,
         "grand_total_l": grand_total_l,
         "net_difference": round(net_difference)
-    }
-
-    st.write(f"first_page_data['items'] type: {type(first_page_data['items'])}, length: {len(first_page_data['items'])}")
-    st.write(f"extra_items_data['items'] type: {type(extra_items_data['items'])}, length: {len(extra_items_data['items'])}")
-    st.write(f"deviation_data['items'] type: {type(deviation_data['items'])}, length: {len(deviation_data['items'])}")
+        }
+    
     return first_page_data, last_page_data, deviation_data, extra_items_data, note_sheet_data
 ########################################################################################################################################################
 def generate_bill_notes(payable_amount, work_order_amount, extra_item_amount):
@@ -315,7 +310,6 @@ def generate_bill_notes(payable_amount, work_order_amount, extra_item_amount):
     return {"notes": note}
 
 def generate_pdf(sheet_name, data, orientation, output_path):
-    st.write(f"Generating PDF for {sheet_name}, data type: {type(data)}, items type: {type(data.get('items', []))}, totals.premium.percent: {data.get('totals', {}).get('premium', {}).get('percent', 'N/A')}")
     try:
         template = env.get_template(f"{sheet_name.lower().replace(' ', '_')}.html")
         html_content = template.render(data=data)
@@ -342,14 +336,11 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             configuration=config,
             options=options
         )
-        st.write(f"Finished PDF for {sheet_name}")
     except Exception as e:
         st.error(f"Error generating PDF for {sheet_name}: {str(e)}")
-        st.write(traceback.format_exc())
         raise
 
 def create_word_doc(sheet_name, data, doc_path):
-    st.write(f"Creating Word doc for {sheet_name}")
     try:
         doc = Document()
         # Page setup: A4, 10mm margins, orientation by sheet
@@ -457,7 +448,6 @@ def create_word_doc(sheet_name, data, doc_path):
             for note in data.get("notes", []):
                 doc.add_paragraph(str(note))
         doc.save(doc_path)
-        st.write(f"Finished Word doc for {sheet_name}")
     except Exception as e:
         st.error(f"Error creating Word doc for {sheet_name}: {str(e)}")
         raise
@@ -553,9 +543,8 @@ if uploaded_file is not None and st.button("Generate Bill"):
             'extra_item_amount': extra_item_amount,
             'notes': notes,
             'totals': first_page_data.get('totals', {'payable': str(payable_amount)})
-        }
-        st.write(f"Note Sheet data: {note_sheet_data}")
-
+                }
+        
         # Generate PDFs
         pdf_files = []
         for sheet_name, data, orientation in [
@@ -635,4 +624,3 @@ if uploaded_file is not None and st.button("Generate Bill"):
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        st.write(traceback.format_exc())
