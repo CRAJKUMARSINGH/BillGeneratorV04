@@ -372,7 +372,12 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             "margin-left": "10mm",
             "margin-right": "10mm",
             "print-media-type": None,
-            "enable-local-file-access": None
+            "enable-local-file-access": None,
+            "disable-smart-shrinking": None,
+            "zoom": "1.0",
+            "dpi": 300,
+            "image-dpi": 300,
+            "image-quality": 100
         }
         pdfkit.from_string(
             html_content,

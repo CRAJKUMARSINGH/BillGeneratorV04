@@ -11,16 +11,14 @@
 }
 
 .container {
-    width: 277mm; /* 297mm - 10mm - 10mm for landscape A4 */
-    min-height: 187mm; /* 210mm - 10mm - 10mm */
-    margin: 10mm auto; 
+    width: auto;
+    margin: 0; 
     padding: 0;
     box-sizing: border-box;
 }
 
 table {
     width: 100%;
-    max-width: 277mm; 
     border-collapse: collapse;
     table-layout: fixed;
 }
@@ -41,7 +39,7 @@ th, td {
 @page { size: A4 landscape; margin: 10mm; }
 @media print {
   body { margin: 0; }
-  .container { margin: 10mm; width: 277mm; min-height: 187mm; }
+  .container { margin: 0; width: auto; }
 }
 
     </style>
