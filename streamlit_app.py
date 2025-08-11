@@ -14,6 +14,7 @@ import numpy as np
 import platform
 from datetime import datetime
 import traceback
+from pathlib import Path
 
 # Set up Jinja2 environment
 env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
@@ -23,10 +24,53 @@ TEMP_DIR = tempfile.mkdtemp()
 
 # Configure wkhtmltopdf
 if platform.system() == "Windows":
-    wkhtmltopdf_path = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+    wkhtmltopdf_path = r"C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe"
     config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
 else:
     config = pdfkit.configuration()
+
+
+def load_custom_theme_assets():
+    css_file = Path("assets/style.css")
+    js_file = Path("assets/balloon.js")
+    if css_file.exists():
+        with open(css_file, "r", encoding="utf-8") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    if js_file.exists():
+        with open(js_file, "r", encoding="utf-8") as f:
+            st.markdown(f"<script>{f.read()}</script>", unsafe_allow_html=True)
+
+
+def render_header_with_logo_and_balloons():
+    st.markdown(
+        """
+        <div class="header-container">
+            <h1 class="main-title">🧾 Professional Bill Generator</h1>
+            <div class="balloon-container">
+                <div class="balloon balloon1">🎈</div>
+                <div class="balloon balloon2">🎈</div>
+                <div class="balloon balloon3">🎈</div>
+            </div>
+            <p class="subtitle">An Initiative by Mrs. Premlata Jain, Additional Administrative Officer, PWD, Udaipur</p>
+            <div class="wishes-message">
+                <p>✨ Best Wishes for Professional Excellence ✨</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_footer_credit():
+    st.markdown(
+        """
+        <div style="margin-top:2rem; text-align:center; opacity:0.8; font-size:0.9rem;">
+            Built with ❤️ by the community. Credits: Theme styling and balloons adapted from CRAJKUMARSINGH/BillGeneratorV02.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def number_to_words(number):
     try:
@@ -453,8 +497,8 @@ def create_word_doc(sheet_name, data, doc_path):
         raise
 
 # Streamlit app
-st.title("Bill Generator")
-st.write("Upload an Excel file and enter tender premium details.")
+load_custom_theme_assets()
+render_header_with_logo_and_balloons()
 
 uploaded_file = st.file_uploader("Choose an Excel file", type="xlsx")
 premium_percent = st.number_input("Tender Premium %", min_value=0.0, max_value=100.0, step=0.01)
@@ -612,6 +656,7 @@ if uploaded_file is not None and st.button("Generate Bill"):
                     file_name="bill_output.zip",
                     mime="application/zip"
                 )
+            render_footer_credit()
         except Exception as e:
             st.error(f"Error creating ZIP file: {str(e)}")
 
