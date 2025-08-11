@@ -5,13 +5,18 @@
     <title>CONTRACTOR BILL</title>
     <style>
         body { font-family: Calibri, sans-serif; font-size: 9pt; margin: 0; }
-        .container { width: 180mm; min-height: 287mm; margin: 10mm 15mm; padding: 0; box-sizing: border-box; }
-        table { width: 100%; max-width: 180mm; border-collapse: collapse; table-layout: fixed; }
+        .container { width: 190mm; min-height: 277mm; margin: 10mm auto; padding: 0; box-sizing: border-box; }
+        table { width: 100%; max-width: 190mm; border-collapse: collapse; table-layout: fixed; }
         th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; overflow: hidden; }
         .header { text-align: left; margin-bottom: 10px; }
         .header p { margin: 2px 0; }
         .bold { font-weight: bold; }
         .underline { text-decoration: underline; }
+        @page { size: A4 portrait; margin: 10mm; }
+        @media print {
+          body { margin: 0; }
+          .container { margin: 10mm; width: 190mm; min-height: 277mm; }
+        }
     </style>
 </head>
 <body>

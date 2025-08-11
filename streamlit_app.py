@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import pdfkit
 from docx import Document
-from docx.shared import Pt
+from docx.enum.section import WD_ORIENT
+from docx.shared import Pt, Mm
 from num2words import num2words
 import os
 import zipfile
@@ -318,25 +319,23 @@ def generate_pdf(sheet_name, data, orientation, output_path):
     try:
         template = env.get_template(f"{sheet_name.lower().replace(' ', '_')}.html")
         html_content = template.render(data=data)
+        # Save HTML alongside PDF for consistency checks/comparison
+        try:
+            html_path = output_path[:-4] + ".html" if output_path.lower().endswith(".pdf") else output_path + ".html"
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+        except Exception:
+            pass
         options = {
             "page-size": "A4",
             "orientation": orientation,
+            "margin-top": "10mm",
+            "margin-bottom": "10mm",
+            "margin-left": "10mm",
+            "margin-right": "10mm",
+            "print-media-type": None,
+            "enable-local-file-access": None
         }
-        # Apply margins only to Note Sheet
-        if sheet_name != "Note Sheet":
-            options.update({
-                "margin-top": "0in",
-                "margin-bottom": "0in",
-                "margin-left": "0in",
-                "margin-right": "0in"
-            })
-        else:
-            options.update({
-                "margin-top": "0.25in",
-                "margin-bottom": "0.6in",
-                "margin-left": "0.25in",
-                "margin-right": "0.25in"
-            })
         pdfkit.from_string(
             html_content,
             output_path,
@@ -353,17 +352,35 @@ def create_word_doc(sheet_name, data, doc_path):
     st.write(f"Creating Word doc for {sheet_name}")
     try:
         doc = Document()
-        if sheet_name == "First Page":
+        # Page setup: A4, 10mm margins, orientation by sheet
+        section = doc.sections[0]
+        section.page_width = Mm(210)
+        section.page_height = Mm(297)
+        # default portrait; switch later if needed
+        section.left_margin = Mm(10)
+        section.right_margin = Mm(10)
+        section.top_margin = Mm(10)
+        section.bottom_margin = Mm(10)
+        if sheet_name == "Deviation Statement":
+            # landscape
+            section.orientation = WD_ORIENT.LANDSCAPE
+            section.page_width = Mm(297)
+            section.page_height = Mm(210)
+        if sheet_name == "First Page": 
+            # Mirror HTML table columns: Unit, Qty since last, Qty upto date, Item No., Description, Rate, Amount upto date, Amount since prev, Remark
             table = doc.add_table(rows=len(data["items"]) + 3, cols=9)
             table.style = "Table Grid"
             for i, item in enumerate(data["items"]):
                 row = table.rows[i]
                 row.cells[0].text = str(item.get("unit", ""))
-                row.cells[2].text = str(item.get("quantity", ""))
+                row.cells[1].text = str(item.get("quantity_since_last", ""))
+                qty_upto = item.get("quantity_upto_date") if item.get("quantity_upto_date") not in (None, "") else item.get("quantity", "")
+                row.cells[2].text = str(qty_upto)
                 row.cells[3].text = str(item.get("serial_no", ""))
                 row.cells[4].text = str(item.get("description", ""))
                 row.cells[5].text = str(item.get("rate", ""))
                 row.cells[6].text = str(item.get("amount", ""))
+                row.cells[7].text = str(item.get("amount_previous", ""))
                 row.cells[8].text = str(item.get("remark", ""))
             row = table.rows[-3]
             row.cells[4].text = "Grand Total"
@@ -393,9 +410,10 @@ def create_word_doc(sheet_name, data, doc_path):
                 row.cells[5].text = str(item.get("rate", ""))
                 row.cells[6].text = str(item.get("amount", ""))
         elif sheet_name == "Deviation Statement":
-            table = doc.add_table(rows=len(data["items"]) + 5, cols=12)
+            # Mirror HTML: 13 columns including Remarks
+            table = doc.add_table(rows=len(data["items"]) + 5, cols=13)
             table.style = "Table Grid"
-            headers = ["Serial No.", "Description", "Unit", "Qty WO", "Rate", "Amt WO", "Qty Bill", "Amt Bill", "Excess Qty", "Excess Amt", "Saving Qty", "Saving Amt"]
+            headers = ["ITEM No.", "Description", "Unit", "Qty as per Work Order", "Rate", "Amt as per Work Order Rs.", "Qty Executed", "Amt as per Executed Rs.", "Excess Qty", "Excess Amt Rs.", "Saving Qty", "Saving Amt Rs.", "REMARKS/ REASON."]
             for j, header in enumerate(headers):
                 table.rows[0].cells[j].text = header
             for i, item in enumerate(data["items"]):
@@ -412,6 +430,7 @@ def create_word_doc(sheet_name, data, doc_path):
                 row.cells[9].text = str(item.get("excess_amt", ""))
                 row.cells[10].text = str(item.get("saving_qty", ""))
                 row.cells[11].text = str(item.get("saving_amt", ""))
+                row.cells[12].text = str(item.get("remark", ""))
             row = table.rows[-4]
             row.cells[1].text = "Grand Total"
             row.cells[5].text = str(data["summary"].get("work_order_total", ""))
@@ -543,6 +562,8 @@ if uploaded_file is not None and st.button("Generate Bill"):
             ("First Page", first_page_data, "portrait"),
             ("Deviation Statement", deviation_data, "landscape"),
             ("Note Sheet", note_sheet_data, "portrait"),
+            ("Last Page", last_page_data, "portrait"),
+            ("Extra Items", extra_items_data, "portrait"),
         ]:
             pdf_path = os.path.join(TEMP_DIR, f"{sheet_name.replace(' ', '_')}.pdf")
             generate_pdf(sheet_name, data, orientation, pdf_path)
@@ -586,6 +607,15 @@ if uploaded_file is not None and st.button("Generate Bill"):
                 for word_file in word_files:
                     if os.path.exists(word_file):
                         zipf.write(word_file, os.path.basename(word_file))
+                # include individual PDFs and HTMLs for verification
+                for sheet_name in ["First Page", "Deviation Statement", "Note Sheet", "Last Page", "Extra Items"]:
+                    base = sheet_name.replace(" ", "_")
+                    pdf_path = os.path.join(TEMP_DIR, f"{base}.pdf")
+                    html_path = os.path.join(TEMP_DIR, f"{base}.html")
+                    if os.path.exists(pdf_path):
+                        zipf.write(pdf_path, os.path.basename(pdf_path))
+                    if os.path.exists(html_path):
+                        zipf.write(html_path, os.path.basename(html_path))
             with open(zip_path, "rb") as f:
                 st.download_button(
                     label="Download Bill Output",
