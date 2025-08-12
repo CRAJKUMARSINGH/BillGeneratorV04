@@ -427,8 +427,16 @@ def generate_pdf(sheet_name, data, orientation, output_path):
         if config is None:
             _log_warn("wkhtmltopdf missing; using xhtml2pdf fallback.")
             try:
+                # Adjust layout for xhtml2pdf to avoid narrow content due to mm widths
+                fallback_html = html_content
+                for mm in ("190mm", "277mm"):
+                    fallback_html = fallback_html.replace(f"width: {mm}", "width: 100%")
+                    fallback_html = fallback_html.replace(f"max-width: {mm}", "width: 100%")
+                # Remove centered margin that can introduce side gaps
+                fallback_html = fallback_html.replace("margin: 0 auto;", "margin: 0;")
+                default_css = '@page { size: A4 %s; margin: 10mm; }' % ("landscape" if orientation=="landscape" else "portrait")
                 with open(output_path, "wb") as pdf_file:
-                    pisa.CreatePDF(src=html_content, dest=pdf_file, default_css='@page { size: A4; margin: 10mm; }')
+                    pisa.CreatePDF(src=fallback_html, dest=pdf_file, default_css=default_css)
             except Exception:
                 _log_traceback()
         else:
