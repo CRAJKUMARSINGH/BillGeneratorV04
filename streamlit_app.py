@@ -762,7 +762,29 @@ def run_cli(input_xlsx: str, premium_percent: float, premium_type: str, output_d
     extra_item_amount = first_page_data["totals"].get("extra_items_sum", 0)
     payable_amount = first_page_data["totals"].get("payable", 0)
     ns = generate_bill_notes(payable_amount, work_order_amount, extra_item_amount)
-    note_sheet_data = {**note_sheet_data, **ns}
+    # Work order metadata (fallbacks similar to UI)
+    work_order_data = {
+        'agreement_no': ws_wo.iloc[0, 1] if pd.notnull(ws_wo.iloc[0, 1]) else '48/2024-25',
+        'name_of_work': ws_wo.iloc[1, 1] if pd.notnull(ws_wo.iloc[1, 1]) else 'N/A',
+        'name_of_firm': ws_wo.iloc[2, 1] if pd.notnull(ws_wo.iloc[2, 1]) else 'N/A',
+        'date_commencement': ws_wo.iloc[3, 1] if pd.notnull(ws_wo.iloc[3, 1]) else 'N/A',
+        'date_completion': ws_wo.iloc[4, 1] if pd.notnull(ws_wo.iloc[4, 1]) else 'N/A',
+        'actual_completion': ws_wo.iloc[5, 1] if pd.notnull(ws_wo.iloc[5, 1]) else 'N/A',
+        'work_order_amount': str(work_order_amount)
+    }
+    note_sheet_data = {
+        **note_sheet_data,
+        **ns,
+        'agreement_no': work_order_data['agreement_no'],
+        'name_of_work': work_order_data['name_of_work'],
+        'name_of_firm': work_order_data['name_of_firm'],
+        'date_commencement': work_order_data['date_commencement'],
+        'date_completion': work_order_data['date_completion'],
+        'actual_completion': work_order_data['actual_completion'],
+        'work_order_amount': work_order_data['work_order_amount'],
+        'extra_item_amount': extra_item_amount,
+        'totals': first_page_data.get('totals', {'payable': str(payable_amount)})
+    }
 
     # Generate PDFs and DOCX like UI flow
     pdf_files = []
