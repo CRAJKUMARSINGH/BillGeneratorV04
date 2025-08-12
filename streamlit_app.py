@@ -21,11 +21,16 @@ import requests
 from xhtml2pdf import pisa
 
 # Page setup and branding
-st.set_page_config(page_title="Bill Generator", page_icon="📄", layout="wide")
+_local_logo = os.path.join(os.getcwd(), "crane_rajkumar.png")
+_page_icon = _local_logo if os.path.exists(_local_logo) else "📄"
+st.set_page_config(page_title="Bill Generator", page_icon=_page_icon, layout="wide")
 
 def resolve_logo_url() -> str | None:
     candidates = [
+        # Prefer local crane_rajkumar.png if present
+        _local_logo if os.path.exists(_local_logo) else None,
         "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/logo.png",
+        "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/crane_rajkumar.png",
         "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/assets/logo.png",
         "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/assets/logo.jpg",
         "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/images/logo.png",
@@ -33,6 +38,10 @@ def resolve_logo_url() -> str | None:
     ]
     for url in candidates:
         try:
+            if url is None:
+                continue
+            if os.path.exists(url):
+                return url
             r = requests.get(url, timeout=5)
             if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
                 return url
@@ -46,6 +55,23 @@ if _logo_url:
         st.logo(_logo_url, size="large")
     except Exception:
         st.sidebar.image(_logo_url, use_container_width=True)
+
+# Header layout for enhanced appearance
+header_cols = st.columns([1, 6])
+with header_cols[0]:
+    if _logo_url and os.path.exists(_logo_url):
+        st.image(_logo_url, use_container_width=True)
+    elif _logo_url:
+        st.image(_logo_url, width=64)
+with header_cols[1]:
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div>
+        <h2 style="margin:0;">Bill Generator</h2>
+        <p style="margin:0; color:#666;">A4 documents with professional layout</p>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Debug logging helpers
 DEBUG_VERBOSE = os.getenv("BILL_VERBOSE", "0") == "1"
