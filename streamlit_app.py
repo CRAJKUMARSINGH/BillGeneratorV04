@@ -18,6 +18,7 @@ import shutil
 import traceback
 import argparse
 import requests
+from xhtml2pdf import pisa
 
 # Page setup and branding
 st.set_page_config(page_title="Bill Generator", page_icon="📄", layout="wide")
@@ -395,7 +396,12 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             "enable-local-file-access": None
         }
         if config is None:
-            _log_warn("wkhtmltopdf missing; skipping HTML-to-PDF.")
+            _log_warn("wkhtmltopdf missing; using xhtml2pdf fallback.")
+            try:
+                with open(output_path, "wb") as pdf_file:
+                    pisa.CreatePDF(src=html_content, dest=pdf_file, default_css='@page { size: A4; margin: 10mm; }')
+            except Exception:
+                _log_traceback()
         else:
             pdfkit.from_string(
                 html_content,
