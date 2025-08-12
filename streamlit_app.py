@@ -46,6 +46,30 @@ if _logo_url:
     except Exception:
         st.sidebar.image(_logo_url, use_container_width=True)
 
+# Debug logging helpers
+DEBUG_VERBOSE = os.getenv("BILL_VERBOSE", "0") == "1"
+
+def _log_debug(message: str) -> None:
+    if DEBUG_VERBOSE:
+        try:
+            st.write(message)
+        except Exception:
+            pass
+
+def _log_warn(message: str) -> None:
+    if DEBUG_VERBOSE:
+        try:
+            st.warning(message)
+        except Exception:
+            pass
+
+def _log_traceback() -> None:
+    if DEBUG_VERBOSE:
+        try:
+            st.write(traceback.format_exc())
+        except Exception:
+            pass
+
 # Set up Jinja2 environment
 env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
 
@@ -69,7 +93,7 @@ def number_to_words(number):
         return str(number)
 ##########################################################################################
 def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
-    st.write("Starting process_bill")
+    _log_debug("Starting process_bill")
     first_page_data = {"header": [], "items": [], "totals": {}}
     last_page_data = {"payable_amount": 0, "amount_words": ""}
     deviation_data = {"items": [], "summary": {}}
@@ -109,7 +133,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
             try:
                 qty = float(cleaned_qty)
             except ValueError:
-                st.warning(f"Skipping invalid quantity at Bill Quantity row {i+1}: '{qty_raw}'")
+                _log_warn(f"Skipping invalid quantity at Bill Quantity row {i+1}: '{qty_raw}'")
                 continue
 
         rate = 0
@@ -120,7 +144,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
             try:
                 rate = float(cleaned_rate)
             except ValueError:
-                st.warning(f"Skipping invalid rate at Work Order row {i+1}: '{rate_raw}'")
+                _log_warn(f"Skipping invalid rate at Work Order row {i+1}: '{rate_raw}'")
                 continue
 
         item = {
@@ -163,7 +187,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
             try:
                 qty = float(cleaned_qty)
             except ValueError:
-                st.warning(f"Skipping invalid quantity at Extra Items row {j+1}: '{qty_raw}'")
+                _log_warn(f"Skipping invalid quantity at Extra Items row {j+1}: '{qty_raw}'")
                 continue
 
         rate = 0
@@ -174,7 +198,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
             try:
                 rate = float(cleaned_rate)
             except ValueError:
-                st.warning(f"Skipping invalid rate at Extra Items row {j+1}: '{rate_raw}'")
+                _log_warn(f"Skipping invalid rate at Extra Items row {j+1}: '{rate_raw}'")
                 continue
 
         item = {
@@ -220,7 +244,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
     overall_excess = 0
     overall_saving = 0
     for i in range(21, last_row_wo):
-        st.write(f"Processing deviation row {i+1}: wo_qty={ws_wo.iloc[i, 3]}, wo_rate={ws_wo.iloc[i, 4]}, bq_qty={ws_bq.iloc[i, 3] if i < ws_bq.shape[0] else 'N/A'}")
+        _log_debug(f"Processing deviation row {i+1}: wo_qty={ws_wo.iloc[i, 3]}, wo_rate={ws_wo.iloc[i, 4]}, bq_qty={ws_bq.iloc[i, 3] if i < ws_bq.shape[0] else 'N/A'}")
         qty_wo_raw = ws_wo.iloc[i, 3] if pd.notnull(ws_wo.iloc[i, 3]) else None
         rate_raw = ws_wo.iloc[i, 4] if pd.notnull(ws_wo.iloc[i, 4]) else None
         qty_bill_raw = ws_bq.iloc[i, 3] if i < ws_bq.shape[0] and pd.notnull(ws_bq.iloc[i, 3]) else None
@@ -233,7 +257,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
             try:
                 qty_wo = float(cleaned_qty_wo)
             except ValueError:
-                st.warning(f"Skipping invalid qty_wo at row {i+1}: '{qty_wo_raw}'")
+                _log_warn(f"Skipping invalid qty_wo at row {i+1}: '{qty_wo_raw}'")
                 continue
 
         rate = 0
@@ -244,7 +268,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
             try:
                 rate = float(cleaned_rate)
             except ValueError:
-                st.warning(f"Skipping invalid rate at row {i+1}: '{rate_raw}'")
+                _log_warn(f"Skipping invalid rate at row {i+1}: '{rate_raw}'")
                 continue
 
         qty_bill = 0
@@ -255,7 +279,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
             try:
                 qty_bill = float(cleaned_qty_bill)
             except ValueError:
-                st.warning(f"Skipping invalid qty_bill at row {i+1}: '{qty_bill_raw}'")
+                _log_warn(f"Skipping invalid qty_bill at row {i+1}: '{qty_bill_raw}'")
                 continue
 
         amt_wo = round(qty_wo * rate)
