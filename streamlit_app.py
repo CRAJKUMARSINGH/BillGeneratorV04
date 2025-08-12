@@ -655,8 +655,9 @@ if uploaded_file is not None and st.button("Generate Bill"):
                 for page in reader.pages:
                     writer.add_page(page)
 
-        with open(pdf_output, "wb") as out_file:
-            writer.write(out_file)
+        if len(writer.pages) > 0:
+            with open(pdf_output, "wb") as out_file:
+                writer.write(out_file)
         ###########################################################################
 
         # Generate Word docs
@@ -760,8 +761,9 @@ def run_cli(input_xlsx: str, premium_percent: float, premium_type: str, output_d
             for page in reader.pages:
                 writer.add_page(page)
     merged_pdf = os.path.join(output_dir, "BILL_AND_DEVIATION.pdf")
-    with open(merged_pdf, "wb") as f:
-        writer.write(f)
+    if len(writer.pages) > 0:
+        with open(merged_pdf, "wb") as f:
+            writer.write(f)
 
     word_files = []
     for sheet_name, data in [
