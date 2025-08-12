@@ -19,6 +19,8 @@ import traceback
 import argparse
 import requests
 from xhtml2pdf import pisa
+import tarfile
+import io
 
 # Page setup and branding
 _local_logo = os.path.join(os.getcwd(), "crane_rajkumar.png")
@@ -103,15 +105,61 @@ env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
 # Temporary directory
 TEMP_DIR = tempfile.mkdtemp()
 
+def ensure_wkhtmltopdf() -> str | None:
+    """Ensure wkhtmltopdf is available. If missing, download a static linux tarball and extract to a temp dir. Returns path or None."""
+    # 1) Already in PATH?
+    path = shutil.which("wkhtmltopdf")
+    if path:
+        return path
+    # 2) Environment override
+    env_path = os.getenv("WKHTMLTOPDF_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    # 3) Try to download a static binary (linux generic amd64)
+    # Known packaging release URL (0.12.6-1) with patched Qt
+    urls = [
+        "https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox-0.12.6-1_linux-generic-amd64.tar.xz",
+        "https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox-0.12.6-1.centos8.x86_64.rpm.tar.xz"
+    ]
+    cache_dir = os.path.join(tempfile.gettempdir(), "wkhtmltopdf_bin")
+    os.makedirs(cache_dir, exist_ok=True)
+    for url in urls:
+        try:
+            resp = requests.get(url, timeout=30)
+            if resp.status_code != 200 or len(resp.content) < 1024:
+                continue
+            tar_bytes = resp.content
+            # Extract from .tar.xz
+            with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:xz") as tf:  # type: ignore
+                members = tf.getmembers()
+                # Look for wkhtmltox/bin/wkhtmltopdf
+                target_member = None
+                for m in members:
+                    if m.name.endswith("/wkhtmltopdf") and "/bin/" in m.name:
+                        target_member = m
+                        break
+                if not target_member:
+                    continue
+                tf.extract(target_member, path=cache_dir)
+                extracted_path = os.path.join(cache_dir, target_member.name)
+                # Make executable
+                os.chmod(extracted_path, 0o755)
+                return extracted_path
+        except Exception:
+            continue
+    return None
+
 # Configure wkhtmltopdf
+wkhtmltopdf_exe = None
 if platform.system() == "Windows":
-    wkhtmltopdf_path = r"C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe"
-    config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
+    wkhtmltopdf_exe = r"C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe"
 else:
-    try:
-        config = pdfkit.configuration()
-    except Exception:
-        config = None
+    wkhtmltopdf_exe = ensure_wkhtmltopdf() or shutil.which("wkhtmltopdf")
+
+try:
+    config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_exe) if wkhtmltopdf_exe else pdfkit.configuration()
+except Exception:
+    config = None
 
 def number_to_words(number):
     try:
