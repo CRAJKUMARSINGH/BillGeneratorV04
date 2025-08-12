@@ -78,6 +78,54 @@ with header_cols[1]:
 # Debug logging helpers
 DEBUG_VERBOSE = os.getenv("BILL_VERBOSE", "0") == "1"
 
+def _show_celebration_once():
+    if "_celebrated" not in st.session_state:
+        st.session_state["_celebrated"] = True
+        try:
+            st.balloons()
+            st.snow()
+        except Exception:
+            pass
+
+def _render_landing():
+    # Minimal CSS to enhance appearance
+    st.markdown(
+        """
+        <style>
+        .hero {
+          padding: 28px 24px; border-radius: 14px;
+          background: linear-gradient(135deg, #f0f7ff 0%, #ffffff 70%);
+          border: 1px solid #e6eef8;
+          box-shadow: 0 6px 24px rgba(0,0,0,0.06);
+        }
+        .hero h1 { margin: 0 0 8px 0; font-size: 28px; }
+        .hero p { margin: 0; color: #4a5568; }
+        .cta { margin-top: 16px; color: #1f6feb; }
+        .tip { font-size: 13px; color: #6b7280; margin-top: 6px; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    hero_cols = st.columns([3, 4])
+    with hero_cols[0]:
+        st.markdown(
+            """
+            <div class="hero">
+              <h1>Generate professional A4 Bills</h1>
+              <p>Uniform 10 mm margins • HTML ↔ PDF ↔ DOCX consistency • LaTeX PDFs</p>
+              <div class="tip">Upload your Excel to begin. Configure premium, download merged outputs.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with hero_cols[1]:
+        banner_path = os.path.join(os.getcwd(), "landing_page.png")
+        if os.path.exists(banner_path):
+            st.image(banner_path, use_container_width=True)
+        elif _logo_url and os.path.exists(_logo_url):
+            st.image(_logo_url, use_container_width=True)
+    _show_celebration_once()
+
 def _log_debug(message: str) -> None:
     if DEBUG_VERBOSE:
         try:
@@ -666,10 +714,13 @@ def create_word_doc(sheet_name, data, doc_path):
         raise
 
 # Streamlit app
+uploaded_file = st.file_uploader("Choose an Excel file", type="xlsx")
+if not uploaded_file:
+    _render_landing()
+    st.stop()
+
 st.title("Bill Generator")
 st.write("Upload an Excel file and enter tender premium details.")
-
-uploaded_file = st.file_uploader("Choose an Excel file", type="xlsx")
 premium_percent = st.number_input("Tender Premium %", min_value=0.0, max_value=100.0, step=0.01)
 premium_type = st.selectbox("Premium Type", ["Above", "Below"])
 
