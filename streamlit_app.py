@@ -337,9 +337,9 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
         "net_difference": round(net_difference)
     }
 
-    st.write(f"first_page_data['items'] type: {type(first_page_data['items'])}, length: {len(first_page_data['items'])}")
-    st.write(f"extra_items_data['items'] type: {type(extra_items_data['items'])}, length: {len(extra_items_data['items'])}")
-    st.write(f"deviation_data['items'] type: {type(deviation_data['items'])}, length: {len(deviation_data['items'])}")
+    _log_debug("Prepared first_page_data items")
+    _log_debug("Prepared extra_items_data items")
+    _log_debug("Prepared deviation_data items")
     return first_page_data, last_page_data, deviation_data, extra_items_data, note_sheet_data
 ########################################################################################################################################################
 def generate_bill_notes(payable_amount, work_order_amount, extra_item_amount):
@@ -373,7 +373,7 @@ def generate_bill_notes(payable_amount, work_order_amount, extra_item_amount):
     return {"notes": note}
 
 def generate_pdf(sheet_name, data, orientation, output_path):
-    st.write(f"Generating PDF for {sheet_name}, data type: {type(data)}, items type: {type(data.get('items', []))}, totals.premium.percent: {data.get('totals', {}).get('premium', {}).get('percent', 'N/A')}")
+    _log_debug(f"Generating PDF for {sheet_name}")
     try:
         template = env.get_template(f"{sheet_name.lower().replace(' ', '_')}.html")
         html_content = template.render(data=data)
@@ -395,7 +395,7 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             "enable-local-file-access": None
         }
         if config is None:
-            st.warning("wkhtmltopdf is not installed; skipping PDF generation for HTML templates.")
+            _log_warn("wkhtmltopdf missing; skipping HTML-to-PDF.")
         else:
             pdfkit.from_string(
                 html_content,
@@ -403,22 +403,22 @@ def generate_pdf(sheet_name, data, orientation, output_path):
                 configuration=config,
                 options=options
             )
-        st.write(f"Finished PDF for {sheet_name}")
+        _log_debug(f"Finished PDF for {sheet_name}")
     except Exception as e:
         st.error(f"Error generating PDF for {sheet_name}: {str(e)}")
-        st.write(traceback.format_exc())
+        _log_traceback()
         raise
 
 def compile_latex_templates(output_dir: str):
     """Compile LaTeX templates in `LaTeX_Templates` to PDFs into `output_dir`. Returns list of PDF paths."""
-    st.write("Compiling LaTeX templates to PDF...")
+    _log_debug("Compiling LaTeX templates to PDF...")
     os.makedirs(output_dir, exist_ok=True)
     latex_dir = os.path.join(os.getcwd(), "LaTeX_Templates")
     if not os.path.isdir(latex_dir):
-        st.warning("LaTeX templates directory not found.")
+        _log_warn("LaTeX templates directory not found.")
         return []
     if shutil.which("pdflatex") is None:
-        st.warning("pdflatex not found on system. Skipping LaTeX PDF compilation.")
+        _log_warn("pdflatex not found on system. Skipping LaTeX PDF compilation.")
         return []
     compiled_pdfs = []
     for name in os.listdir(latex_dir):
@@ -439,11 +439,11 @@ def compile_latex_templates(output_dir: str):
             if os.path.exists(pdf_path):
                 compiled_pdfs.append(pdf_path)
         except Exception as e:
-            st.warning(f"Failed to compile {name}: {e}")
+            _log_warn(f"Failed to compile {name}: {e}")
     return compiled_pdfs
 
 def create_word_doc(sheet_name, data, doc_path):
-    st.write(f"Creating Word doc for {sheet_name}")
+    _log_debug(f"Creating Word doc for {sheet_name}")
     try:
         doc = Document()
         # Page setup: A4, 10mm margins, orientation by sheet
@@ -551,7 +551,7 @@ def create_word_doc(sheet_name, data, doc_path):
             for note in data.get("notes", []):
                 doc.add_paragraph(str(note))
         doc.save(doc_path)
-        st.write(f"Finished Word doc for {sheet_name}")
+        _log_debug(f"Finished Word doc for {sheet_name}")
     except Exception as e:
         st.error(f"Error creating Word doc for {sheet_name}: {str(e)}")
         raise
@@ -648,7 +648,7 @@ if uploaded_file is not None and st.button("Generate Bill"):
             'notes': notes,
             'totals': first_page_data.get('totals', {'payable': str(payable_amount)})
         }
-        st.write(f"Note Sheet data: {note_sheet_data}")
+        _log_debug("Note Sheet data prepared")
 
         # Generate PDFs
         pdf_files = []
@@ -736,7 +736,7 @@ if uploaded_file is not None and st.button("Generate Bill"):
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        st.write(traceback.format_exc())
+        _log_traceback()
 
 def run_cli(input_xlsx: str, premium_percent: float, premium_type: str, output_dir: str) -> str:
     import pandas as pd
