@@ -499,6 +499,12 @@ def create_word_doc(sheet_name, data, doc_path):
             # Mirror HTML table columns: Unit, Qty since last, Qty upto date, Item No., Description, Rate, Amount upto date, Amount since prev, Remark
             table = doc.add_table(rows=len(data["items"]) + 3, cols=9)
             table.style = "Table Grid"
+            table.autofit = False
+            # Column widths in mm to total 190mm content width
+            fp_widths_mm = [12, 18, 18, 12, 80, 12, 18, 12, 8]
+            for idx, w in enumerate(fp_widths_mm):
+                for row in table.rows:
+                    row.cells[idx].width = Mm(w)
             for i, item in enumerate(data["items"]):
                 row = table.rows[i]
                 row.cells[0].text = str(item.get("unit", ""))
@@ -526,6 +532,12 @@ def create_word_doc(sheet_name, data, doc_path):
         elif sheet_name == "Extra Items":
             table = doc.add_table(rows=len(data["items"]) + 1, cols=7)
             table.style = "Table Grid"
+            table.autofit = False
+            # Approx widths to fill 190mm
+            ei_widths_mm = [15, 30, 70, 20, 15, 20, 20]
+            for idx, w in enumerate(ei_widths_mm):
+                for row in table.rows:
+                    row.cells[idx].width = Mm(w)
             headers = ["Serial No.", "Remark", "Description", "Quantity", "Unit", "Rate", "Amount"]
             for j, header in enumerate(headers):
                 table.rows[0].cells[j].text = header
@@ -542,6 +554,12 @@ def create_word_doc(sheet_name, data, doc_path):
             # Mirror HTML: 13 columns including Remarks
             table = doc.add_table(rows=len(data["items"]) + 5, cols=13)
             table.style = "Table Grid"
+            table.autofit = False
+            # Landscape content width = 297 - (2*10) = 277mm
+            ds_widths_mm = [6, 90, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 50]
+            for idx, w in enumerate(ds_widths_mm):
+                for row in table.rows:
+                    row.cells[idx].width = Mm(w)
             headers = ["ITEM No.", "Description", "Unit", "Qty as per Work Order", "Rate", "Amt as per Work Order Rs.", "Qty Executed", "Amt as per Executed Rs.", "Excess Qty", "Excess Amt Rs.", "Saving Qty", "Saving Amt Rs.", "REMARKS/ REASON."]
             for j, header in enumerate(headers):
                 table.rows[0].cells[j].text = header
