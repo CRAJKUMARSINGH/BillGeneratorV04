@@ -13,7 +13,38 @@ from pypdf import PdfReader, PdfWriter
 import numpy as np
 import platform
 from datetime import datetime
+import subprocess
+import shutil
 import traceback
+import argparse
+import requests
+
+# Page setup and branding
+st.set_page_config(page_title="Bill Generator", page_icon="📄", layout="wide")
+
+def resolve_logo_url() -> str | None:
+    candidates = [
+        "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/logo.png",
+        "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/assets/logo.png",
+        "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/assets/logo.jpg",
+        "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/images/logo.png",
+        "https://raw.githubusercontent.com/CRAJKUMARSINGH/Priyanka_TenderV01/HEAD/images/logo.jpg",
+    ]
+    for url in candidates:
+        try:
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+                return url
+        except Exception:
+            continue
+    return None
+
+_logo_url = resolve_logo_url()
+if _logo_url:
+    try:
+        st.logo(_logo_url, size="large")
+    except Exception:
+        st.sidebar.image(_logo_url, use_container_width=True)
 
 # Set up Jinja2 environment
 env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
@@ -23,10 +54,13 @@ TEMP_DIR = tempfile.mkdtemp()
 
 # Configure wkhtmltopdf
 if platform.system() == "Windows":
-    wkhtmltopdf_path = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+    wkhtmltopdf_path = r"C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe"
     config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
 else:
-    config = pdfkit.configuration()
+    try:
+        config = pdfkit.configuration()
+    except Exception:
+        config = None
 
 def number_to_words(number):
     try:
@@ -336,17 +370,53 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             "print-media-type": None,
             "enable-local-file-access": None
         }
-        pdfkit.from_string(
-            html_content,
-            output_path,
-            configuration=config,
-            options=options
-        )
+        if config is None:
+            st.warning("wkhtmltopdf is not installed; skipping PDF generation for HTML templates.")
+        else:
+            pdfkit.from_string(
+                html_content,
+                output_path,
+                configuration=config,
+                options=options
+            )
         st.write(f"Finished PDF for {sheet_name}")
     except Exception as e:
         st.error(f"Error generating PDF for {sheet_name}: {str(e)}")
         st.write(traceback.format_exc())
         raise
+
+def compile_latex_templates(output_dir: str):
+    """Compile LaTeX templates in `LaTeX_Templates` to PDFs into `output_dir`. Returns list of PDF paths."""
+    st.write("Compiling LaTeX templates to PDF...")
+    os.makedirs(output_dir, exist_ok=True)
+    latex_dir = os.path.join(os.getcwd(), "LaTeX_Templates")
+    if not os.path.isdir(latex_dir):
+        st.warning("LaTeX templates directory not found.")
+        return []
+    if shutil.which("pdflatex") is None:
+        st.warning("pdflatex not found on system. Skipping LaTeX PDF compilation.")
+        return []
+    compiled_pdfs = []
+    for name in os.listdir(latex_dir):
+        if not name.lower().endswith(".tex"):
+            continue
+        tex_path = os.path.join(latex_dir, name)
+        try:
+            result = subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", f"-output-directory={output_dir}", tex_path],
+                cwd=latex_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=True,
+                text=True,
+            )
+            pdf_name = os.path.splitext(name)[0] + ".pdf"
+            pdf_path = os.path.join(output_dir, pdf_name)
+            if os.path.exists(pdf_path):
+                compiled_pdfs.append(pdf_path)
+        except Exception as e:
+            st.warning(f"Failed to compile {name}: {e}")
+    return compiled_pdfs
 
 def create_word_doc(sheet_name, data, doc_path):
     st.write(f"Creating Word doc for {sheet_name}")
@@ -569,6 +639,10 @@ if uploaded_file is not None and st.button("Generate Bill"):
             generate_pdf(sheet_name, data, orientation, pdf_path)
             pdf_files.append(pdf_path)
 
+        # Compile LaTeX templates to a separate output folder
+        latex_output_dir = os.path.join(TEMP_DIR, "latex_pdfs")
+        latex_pdfs = compile_latex_templates(latex_output_dir)
+
         # Merge PDFs
         current_date = datetime.now().strftime("%Y%m%d")
         pdf_output = os.path.join(TEMP_DIR, f"BILL_AND_DEVIATION_{current_date}.pdf")
@@ -581,8 +655,9 @@ if uploaded_file is not None and st.button("Generate Bill"):
                 for page in reader.pages:
                     writer.add_page(page)
 
-        with open(pdf_output, "wb") as out_file:
-            writer.write(out_file)
+        if len(writer.pages) > 0:
+            with open(pdf_output, "wb") as out_file:
+                writer.write(out_file)
         ###########################################################################
 
         # Generate Word docs
@@ -616,6 +691,9 @@ if uploaded_file is not None and st.button("Generate Bill"):
                         zipf.write(pdf_path, os.path.basename(pdf_path))
                     if os.path.exists(html_path):
                         zipf.write(html_path, os.path.basename(html_path))
+                # include LaTeX-compiled PDFs under a separate folder in the ZIP
+                for pdf in latex_pdfs:
+                    zipf.write(pdf, os.path.join("latex_pdfs", os.path.basename(pdf)))
             with open(zip_path, "rb") as f:
                 st.download_button(
                     label="Download Bill Output",
@@ -627,7 +705,6 @@ if uploaded_file is not None and st.button("Generate Bill"):
             st.error(f"Error creating ZIP file: {str(e)}")
 
         # Clean up temporary files
-        import shutil
         try:
             shutil.rmtree(TEMP_DIR)
         except Exception as e:
@@ -636,3 +713,97 @@ if uploaded_file is not None and st.button("Generate Bill"):
     except Exception as e:
         st.error(f"Error: {str(e)}")
         st.write(traceback.format_exc())
+
+def run_cli(input_xlsx: str, premium_percent: float, premium_type: str, output_dir: str) -> str:
+    import pandas as pd
+    os.makedirs(output_dir, exist_ok=True)
+    global TEMP_DIR
+    TEMP_DIR = output_dir
+    xl = pd.ExcelFile(input_xlsx)
+    ws_wo = xl.parse("Work Order", header=None)
+    ws_bq = xl.parse("Bill Quantity", header=None)
+    ws_extra = xl.parse("Extra Items", header=None)
+    first_page_data, last_page_data, deviation_data, extra_items_data, note_sheet_data = process_bill(
+        ws_wo, ws_bq, ws_extra, premium_percent, premium_type.lower()
+    )
+    # Compute note_sheet_data same as UI flow
+    try:
+        work_order_amount = sum(
+            float(ws_wo.iloc[i, 3]) * float(ws_wo.iloc[i, 4])
+            for i in range(21, ws_wo.shape[0])
+            if pd.notnull(ws_wo.iloc[i, 3]) and pd.notnull(ws_wo.iloc[i, 4])
+        )
+    except Exception:
+        work_order_amount = 0
+    extra_item_amount = first_page_data["totals"].get("extra_items_sum", 0)
+    payable_amount = first_page_data["totals"].get("payable", 0)
+    ns = generate_bill_notes(payable_amount, work_order_amount, extra_item_amount)
+    note_sheet_data = {**note_sheet_data, **ns}
+
+    # Generate PDFs and DOCX like UI flow
+    pdf_files = []
+    for sheet_name, data, orientation in [
+        ("First Page", first_page_data, "portrait"),
+        ("Deviation Statement", deviation_data, "landscape"),
+        ("Note Sheet", note_sheet_data, "portrait"),
+        ("Last Page", last_page_data, "portrait"),
+        ("Extra Items", extra_items_data, "portrait"),
+    ]:
+        pdf_path = os.path.join(output_dir, f"{sheet_name.replace(' ', '_')}.pdf")
+        generate_pdf(sheet_name, data, orientation, pdf_path)
+        if os.path.exists(pdf_path):
+            pdf_files.append(pdf_path)
+
+    writer = PdfWriter()
+    for pdf in pdf_files:
+        if os.path.exists(pdf):
+            reader = PdfReader(pdf)
+            for page in reader.pages:
+                writer.add_page(page)
+    merged_pdf = os.path.join(output_dir, "BILL_AND_DEVIATION.pdf")
+    if len(writer.pages) > 0:
+        with open(merged_pdf, "wb") as f:
+            writer.write(f)
+
+    word_files = []
+    for sheet_name, data in [
+        ("First Page", first_page_data),
+        ("Last Page", last_page_data),
+        ("Extra Items", extra_items_data),
+        ("Deviation Statement", deviation_data),
+        ("Note Sheet", note_sheet_data)
+    ]:
+        doc_path = os.path.join(output_dir, f"{sheet_name.replace(' ', '_')}.docx")
+        create_word_doc(sheet_name, data, doc_path)
+        word_files.append(doc_path)
+
+    # Compile LaTeX
+    latex_output_dir = os.path.join(output_dir, "latex_pdfs")
+    compile_latex_templates(latex_output_dir)
+
+    # Create zip
+    zip_path = os.path.join(output_dir, "bill_output.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        if os.path.exists(merged_pdf):
+            zipf.write(merged_pdf, os.path.basename(merged_pdf))
+        for wf in word_files:
+            if os.path.exists(wf):
+                zipf.write(wf, os.path.basename(wf))
+        for pf in pdf_files:
+            if os.path.exists(pf):
+                zipf.write(pf, os.path.basename(pf))
+        if os.path.isdir(latex_output_dir):
+            for name in os.listdir(latex_output_dir):
+                if name.lower().endswith('.pdf'):
+                    zipf.write(os.path.join(latex_output_dir, name), os.path.join('latex_pdfs', name))
+    return zip_path
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate Bill PDFs programmatically")
+    parser.add_argument("input", help="Path to input Excel (.xlsx)")
+    parser.add_argument("--premium-percent", type=float, default=0.0)
+    parser.add_argument("--premium-type", choices=["add", "deduct"], default="add")
+    parser.add_argument("--out", default=os.path.join(os.getcwd(), "output"))
+    args = parser.parse_args()
+    out_zip = run_cli(args.input, args.premium_percent, args.premium_type, args.out)
+    print(out_zip)
