@@ -419,7 +419,10 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             "margin-left": "10mm",
             "margin-right": "10mm",
             "print-media-type": None,
-            "enable-local-file-access": None
+            "enable-local-file-access": None,
+            "disable-smart-shrinking": None,
+            "zoom": "1",
+            "dpi": 300,
         }
         if config is None:
             _log_warn("wkhtmltopdf missing; using xhtml2pdf fallback.")
