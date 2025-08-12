@@ -13,6 +13,8 @@ from pypdf import PdfReader, PdfWriter
 import numpy as np
 import platform
 from datetime import datetime
+import subprocess
+import shutil
 import traceback
 
 # Set up Jinja2 environment
@@ -23,10 +25,13 @@ TEMP_DIR = tempfile.mkdtemp()
 
 # Configure wkhtmltopdf
 if platform.system() == "Windows":
-    wkhtmltopdf_path = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+    wkhtmltopdf_path = r"C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe"
     config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
 else:
-    config = pdfkit.configuration()
+    try:
+        config = pdfkit.configuration()
+    except Exception:
+        config = None
 
 def number_to_words(number):
     try:
@@ -336,17 +341,53 @@ def generate_pdf(sheet_name, data, orientation, output_path):
             "print-media-type": None,
             "enable-local-file-access": None
         }
-        pdfkit.from_string(
-            html_content,
-            output_path,
-            configuration=config,
-            options=options
-        )
+        if config is None:
+            st.warning("wkhtmltopdf is not installed; skipping PDF generation for HTML templates.")
+        else:
+            pdfkit.from_string(
+                html_content,
+                output_path,
+                configuration=config,
+                options=options
+            )
         st.write(f"Finished PDF for {sheet_name}")
     except Exception as e:
         st.error(f"Error generating PDF for {sheet_name}: {str(e)}")
         st.write(traceback.format_exc())
         raise
+
+def compile_latex_templates(output_dir: str):
+    """Compile LaTeX templates in `LaTeX_Templates` to PDFs into `output_dir`. Returns list of PDF paths."""
+    st.write("Compiling LaTeX templates to PDF...")
+    os.makedirs(output_dir, exist_ok=True)
+    latex_dir = os.path.join(os.getcwd(), "LaTeX_Templates")
+    if not os.path.isdir(latex_dir):
+        st.warning("LaTeX templates directory not found.")
+        return []
+    if shutil.which("pdflatex") is None:
+        st.warning("pdflatex not found on system. Skipping LaTeX PDF compilation.")
+        return []
+    compiled_pdfs = []
+    for name in os.listdir(latex_dir):
+        if not name.lower().endswith(".tex"):
+            continue
+        tex_path = os.path.join(latex_dir, name)
+        try:
+            result = subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", f"-output-directory={output_dir}", tex_path],
+                cwd=latex_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=True,
+                text=True,
+            )
+            pdf_name = os.path.splitext(name)[0] + ".pdf"
+            pdf_path = os.path.join(output_dir, pdf_name)
+            if os.path.exists(pdf_path):
+                compiled_pdfs.append(pdf_path)
+        except Exception as e:
+            st.warning(f"Failed to compile {name}: {e}")
+    return compiled_pdfs
 
 def create_word_doc(sheet_name, data, doc_path):
     st.write(f"Creating Word doc for {sheet_name}")
@@ -569,6 +610,10 @@ if uploaded_file is not None and st.button("Generate Bill"):
             generate_pdf(sheet_name, data, orientation, pdf_path)
             pdf_files.append(pdf_path)
 
+        # Compile LaTeX templates to a separate output folder
+        latex_output_dir = os.path.join(TEMP_DIR, "latex_pdfs")
+        latex_pdfs = compile_latex_templates(latex_output_dir)
+
         # Merge PDFs
         current_date = datetime.now().strftime("%Y%m%d")
         pdf_output = os.path.join(TEMP_DIR, f"BILL_AND_DEVIATION_{current_date}.pdf")
@@ -616,6 +661,9 @@ if uploaded_file is not None and st.button("Generate Bill"):
                         zipf.write(pdf_path, os.path.basename(pdf_path))
                     if os.path.exists(html_path):
                         zipf.write(html_path, os.path.basename(html_path))
+                # include LaTeX-compiled PDFs under a separate folder in the ZIP
+                for pdf in latex_pdfs:
+                    zipf.write(pdf, os.path.join("latex_pdfs", os.path.basename(pdf)))
             with open(zip_path, "rb") as f:
                 st.download_button(
                     label="Download Bill Output",
@@ -627,7 +675,6 @@ if uploaded_file is not None and st.button("Generate Bill"):
             st.error(f"Error creating ZIP file: {str(e)}")
 
         # Clean up temporary files
-        import shutil
         try:
             shutil.rmtree(TEMP_DIR)
         except Exception as e:
