@@ -153,6 +153,18 @@ env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
 # Temporary directory
 TEMP_DIR = tempfile.mkdtemp()
 
+def _safe_extract_tar_xz_bytes(tar_bytes: bytes, dest_dir: str) -> list[str]:
+    os.makedirs(dest_dir, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:xz") as tf:  # type: ignore
+        members = tf.getmembers()
+        abs_dest = os.path.abspath(dest_dir)
+        for m in members:
+            member_path = os.path.abspath(os.path.join(dest_dir, m.name))
+            if not (member_path == abs_dest or member_path.startswith(abs_dest + os.sep)):
+                raise Exception(f"Unsafe path in tar: {m.name}")
+        tf.extractall(path=dest_dir, members=members)
+        return [m.name for m in members]
+
 def ensure_wkhtmltopdf() -> str | None:
     """Ensure wkhtmltopdf is available. If missing, download a static linux tarball and extract to a temp dir. Returns path or None."""
     # 1) Already in PATH?
@@ -177,22 +189,19 @@ def ensure_wkhtmltopdf() -> str | None:
             if resp.status_code != 200 or len(resp.content) < 1024:
                 continue
             tar_bytes = resp.content
-            # Extract from .tar.xz
-            with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:xz") as tf:  # type: ignore
-                members = tf.getmembers()
-                # Look for wkhtmltox/bin/wkhtmltopdf
-                target_member = None
-                for m in members:
-                    if m.name.endswith("/wkhtmltopdf") and "/bin/" in m.name:
-                        target_member = m
-                        break
-                if not target_member:
-                    continue
-                tf.extract(target_member, path=cache_dir)
-                extracted_path = os.path.join(cache_dir, target_member.name)
-                # Make executable
-                os.chmod(extracted_path, 0o755)
-                return extracted_path
+            # Safely extract entire archive to ensure runtime libs are present
+            extract_dir = os.path.join(cache_dir, "wkhtmltox_dist")
+            try:
+                names = _safe_extract_tar_xz_bytes(tar_bytes, extract_dir)
+            except Exception:
+                continue
+            # Find the wkhtmltopdf binary within the extracted tree
+            target_name = next((n for n in names if n.endswith("/wkhtmltopdf") or n.endswith("wkhtmltopdf")), None)
+            if not target_name:
+                continue
+            extracted_path = os.path.abspath(os.path.join(extract_dir, target_name))
+            os.chmod(extracted_path, 0o755)
+            return extracted_path
         except Exception:
             continue
     return None
@@ -819,17 +828,17 @@ if uploaded_file is not None and st.button("Generate Bill"):
             ("Last Page", last_page_data, "portrait"),
             ("Extra Items", extra_items_data, "portrait"),
         ]:
-            pdf_path = os.path.join(TEMP_DIR, f"{sheet_name.replace(' ', '_')}.pdf")
+            pdf_path = os.path.join(run_temp_dir, f"{sheet_name.replace(' ', '_')}.pdf")
             generate_pdf(sheet_name, data, orientation, pdf_path)
             pdf_files.append(pdf_path)
 
         # Compile LaTeX templates to a separate output folder
-        latex_output_dir = os.path.join(TEMP_DIR, "latex_pdfs")
+        latex_output_dir = os.path.join(run_temp_dir, "latex_pdfs")
         latex_pdfs = compile_latex_templates(latex_output_dir)
 
         # Merge PDFs
         current_date = datetime.now().strftime("%Y%m%d")
-        pdf_output = os.path.join(TEMP_DIR, f"BILL_AND_DEVIATION_{current_date}.pdf")
+        pdf_output = os.path.join(run_temp_dir, f"BILL_AND_DEVIATION_{current_date}.pdf")
         #############################################################################
         writer = PdfWriter()
 
@@ -853,12 +862,12 @@ if uploaded_file is not None and st.button("Generate Bill"):
             ("Deviation Statement", deviation_data),
             ("Note Sheet", note_sheet_data)
         ]:
-            doc_path = os.path.join(TEMP_DIR, f"{sheet_name.replace(' ', '_')}.docx")
+            doc_path = os.path.join(run_temp_dir, f"{sheet_name.replace(' ', '_')}.docx")
             create_word_doc(sheet_name, data, doc_path)
             word_files.append(doc_path)
 
         # Create ZIP
-        zip_path = os.path.join(TEMP_DIR, "bill_output.zip")
+        zip_path = os.path.join(run_temp_dir, "bill_output.zip")
         try:
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 if os.path.exists(pdf_output):
@@ -869,8 +878,8 @@ if uploaded_file is not None and st.button("Generate Bill"):
                 # include individual PDFs and HTMLs for verification
                 for sheet_name in ["First Page", "Deviation Statement", "Note Sheet", "Last Page", "Extra Items"]:
                     base = sheet_name.replace(" ", "_")
-                    pdf_path = os.path.join(TEMP_DIR, f"{base}.pdf")
-                    html_path = os.path.join(TEMP_DIR, f"{base}.html")
+                    pdf_path = os.path.join(run_temp_dir, f"{base}.pdf")
+                    html_path = os.path.join(run_temp_dir, f"{base}.html")
                     if os.path.exists(pdf_path):
                         zipf.write(pdf_path, os.path.basename(pdf_path))
                     if os.path.exists(html_path):
@@ -879,9 +888,10 @@ if uploaded_file is not None and st.button("Generate Bill"):
                 for pdf in latex_pdfs:
                     zipf.write(pdf, os.path.join("latex_pdfs", os.path.basename(pdf)))
             with open(zip_path, "rb") as f:
+                zip_bytes = f.read()
                 st.download_button(
                     label="Download Bill Output",
-                    data=f,
+                    data=zip_bytes,
                     file_name="bill_output.zip",
                     mime="application/zip"
                 )
@@ -890,7 +900,7 @@ if uploaded_file is not None and st.button("Generate Bill"):
 
         # Clean up temporary files
         try:
-            shutil.rmtree(TEMP_DIR)
+            shutil.rmtree(run_temp_dir)
         except Exception as e:
             st.warning(f"Failed to clean up temp directory: {str(e)}")
 
@@ -1008,8 +1018,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Bill PDFs programmatically")
     parser.add_argument("input", help="Path to input Excel (.xlsx)")
     parser.add_argument("--premium-percent", type=float, default=0.0)
-    parser.add_argument("--premium-type", choices=["add", "deduct"], default="add")
+    parser.add_argument("--premium-type", choices=["above", "below", "add", "deduct"], default="above")
     parser.add_argument("--out", default=os.path.join(os.getcwd(), "output"))
     args = parser.parse_args()
-    out_zip = run_cli(args.input, args.premium_percent, args.premium_type, args.out)
+    premium_type_cli = args.premium_type.lower()
+    if premium_type_cli in ("add", "above"):
+        premium_type_cli = "above"
+    elif premium_type_cli in ("deduct", "below"):
+        premium_type_cli = "below"
+    out_zip = run_cli(args.input, args.premium_percent, premium_type_cli, args.out)
     print(out_zip)
