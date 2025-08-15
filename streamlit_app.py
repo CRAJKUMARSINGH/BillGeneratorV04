@@ -151,8 +151,14 @@ def _log_traceback() -> None:
 env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
 
 # Temporary directory
-TEMP_DIR = tempfile.mkdtemp()
+TEMP_DIR = None
 
+def get_temp_dir():
+    """Get or create a temporary directory for this session."""
+    global TEMP_DIR
+    if TEMP_DIR is None or not os.path.exists(TEMP_DIR):
+        TEMP_DIR = tempfile.mkdtemp()
+    return TEMP_DIR
 def ensure_wkhtmltopdf() -> str | None:
     """Ensure wkhtmltopdf is available. If missing, download a static linux tarball and extract to a temp dir. Returns path or None."""
     # 1) Already in PATH?
@@ -173,8 +179,13 @@ def ensure_wkhtmltopdf() -> str | None:
     os.makedirs(cache_dir, exist_ok=True)
     for url in urls:
         try:
-            resp = requests.get(url, timeout=30)
+            resp = requests.get(url, timeout=30, stream=True)
             if resp.status_code != 200 or len(resp.content) < 1024:
+                continue
+            # Validate content size to prevent memory exhaustion
+            content_length = resp.headers.get('content-length')
+            if content_length and int(content_length) > 100 * 1024 * 1024:  # 100MB limit
+                _log_warn(f"Download too large: {content_length} bytes")
                 continue
             tar_bytes = resp.content
             # Extract from .tar.xz
@@ -187,6 +198,10 @@ def ensure_wkhtmltopdf() -> str | None:
                         target_member = m
                         break
                 if not target_member:
+                    continue
+                # Security check: prevent path traversal
+                if ".." in target_member.name or target_member.name.startswith("/"):
+                    _log_warn(f"Suspicious path in archive: {target_member.name}")
                     continue
                 tf.extract(target_member, path=cache_dir)
                 extracted_path = os.path.join(cache_dir, target_member.name)
@@ -245,7 +260,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
     # Work Order items
     last_row_wo = ws_wo.shape[0]
     for i in range(21, last_row_wo):
-        qty_raw = ws_bq.iloc[i, 3] if i < ws_bq.shape[0] and pd.notnull(ws_bq.iloc[i, 3]) else None
+        qty_raw = ws_bq.iloc[i, 3] if i < ws_bq.shape[0] and pd.notnull(ws_bq.iloc[i, 3]) else 0
         rate_raw = ws_wo.iloc[i, 4] if pd.notnull(ws_wo.iloc[i, 4]) else None
 
         qty = 0
@@ -257,7 +272,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
                 qty = float(cleaned_qty)
             except ValueError:
                 _log_warn(f"Skipping invalid quantity at Bill Quantity row {i+1}: '{qty_raw}'")
-                continue
+                qty = 0
 
         rate = 0
         if isinstance(rate_raw, (int, float)):
@@ -268,7 +283,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
                 rate = float(cleaned_rate)
             except ValueError:
                 _log_warn(f"Skipping invalid rate at Work Order row {i+1}: '{rate_raw}'")
-                continue
+                rate = 0
 
         item = {
             "serial_no": str(ws_wo.iloc[i, 0]) if pd.notnull(ws_wo.iloc[i, 0]) else "",
@@ -299,7 +314,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
     # Extra Items
     last_row_extra = ws_extra.shape[0]
     for j in range(6, last_row_extra):
-        qty_raw = ws_extra.iloc[j, 3] if pd.notnull(ws_extra.iloc[j, 3]) else None
+        qty_raw = ws_extra.iloc[j, 3] if pd.notnull(ws_extra.iloc[j, 3]) else 0
         rate_raw = ws_extra.iloc[j, 5] if pd.notnull(ws_extra.iloc[j, 5]) else None
 
         qty = 0
@@ -311,7 +326,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
                 qty = float(cleaned_qty)
             except ValueError:
                 _log_warn(f"Skipping invalid quantity at Extra Items row {j+1}: '{qty_raw}'")
-                continue
+                qty = 0
 
         rate = 0
         if isinstance(rate_raw, (int, float)):
@@ -322,7 +337,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
                 rate = float(cleaned_rate)
             except ValueError:
                 _log_warn(f"Skipping invalid rate at Extra Items row {j+1}: '{rate_raw}'")
-                continue
+                rate = 0
 
         item = {
             "serial_no": str(ws_extra.iloc[j, 0]) if pd.notnull(ws_extra.iloc[j, 0]) else "",
@@ -368,9 +383,9 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
     overall_saving = 0
     for i in range(21, last_row_wo):
         _log_debug(f"Processing deviation row {i+1}: wo_qty={ws_wo.iloc[i, 3]}, wo_rate={ws_wo.iloc[i, 4]}, bq_qty={ws_bq.iloc[i, 3] if i < ws_bq.shape[0] else 'N/A'}")
-        qty_wo_raw = ws_wo.iloc[i, 3] if pd.notnull(ws_wo.iloc[i, 3]) else None
+        qty_wo_raw = ws_wo.iloc[i, 3] if pd.notnull(ws_wo.iloc[i, 3]) else 0
         rate_raw = ws_wo.iloc[i, 4] if pd.notnull(ws_wo.iloc[i, 4]) else None
-        qty_bill_raw = ws_bq.iloc[i, 3] if i < ws_bq.shape[0] and pd.notnull(ws_bq.iloc[i, 3]) else None
+        qty_bill_raw = ws_bq.iloc[i, 3] if i < ws_bq.shape[0] and pd.notnull(ws_bq.iloc[i, 3]) else 0
 
         qty_wo = 0
         if isinstance(qty_wo_raw, (int, float)):
@@ -381,7 +396,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
                 qty_wo = float(cleaned_qty_wo)
             except ValueError:
                 _log_warn(f"Skipping invalid qty_wo at row {i+1}: '{qty_wo_raw}'")
-                continue
+                qty_wo = 0
 
         rate = 0
         if isinstance(rate_raw, (int, float)):
@@ -392,7 +407,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
                 rate = float(cleaned_rate)
             except ValueError:
                 _log_warn(f"Skipping invalid rate at row {i+1}: '{rate_raw}'")
-                continue
+                rate = 0
 
         qty_bill = 0
         if isinstance(qty_bill_raw, (int, float)):
@@ -403,7 +418,7 @@ def process_bill(ws_wo, ws_bq, ws_extra, premium_percent, premium_type):
                 qty_bill = float(cleaned_qty_bill)
             except ValueError:
                 _log_warn(f"Skipping invalid qty_bill at row {i+1}: '{qty_bill_raw}'")
-                continue
+                qty_bill = 0
 
         amt_wo = round(qty_wo * rate)
         amt_bill = round(qty_bill * rate)
@@ -819,17 +834,17 @@ if uploaded_file is not None and st.button("Generate Bill"):
             ("Last Page", last_page_data, "portrait"),
             ("Extra Items", extra_items_data, "portrait"),
         ]:
-            pdf_path = os.path.join(TEMP_DIR, f"{sheet_name.replace(' ', '_')}.pdf")
+            pdf_path = os.path.join(get_temp_dir(), f"{sheet_name.replace(' ', '_')}.pdf")
             generate_pdf(sheet_name, data, orientation, pdf_path)
             pdf_files.append(pdf_path)
 
         # Compile LaTeX templates to a separate output folder
-        latex_output_dir = os.path.join(TEMP_DIR, "latex_pdfs")
+        latex_output_dir = os.path.join(get_temp_dir(), "latex_pdfs")
         latex_pdfs = compile_latex_templates(latex_output_dir)
 
         # Merge PDFs
         current_date = datetime.now().strftime("%Y%m%d")
-        pdf_output = os.path.join(TEMP_DIR, f"BILL_AND_DEVIATION_{current_date}.pdf")
+        pdf_output = os.path.join(get_temp_dir(), f"BILL_AND_DEVIATION_{current_date}.pdf")
         #############################################################################
         writer = PdfWriter()
 
@@ -853,12 +868,12 @@ if uploaded_file is not None and st.button("Generate Bill"):
             ("Deviation Statement", deviation_data),
             ("Note Sheet", note_sheet_data)
         ]:
-            doc_path = os.path.join(TEMP_DIR, f"{sheet_name.replace(' ', '_')}.docx")
+            doc_path = os.path.join(get_temp_dir(), f"{sheet_name.replace(' ', '_')}.docx")
             create_word_doc(sheet_name, data, doc_path)
             word_files.append(doc_path)
 
         # Create ZIP
-        zip_path = os.path.join(TEMP_DIR, "bill_output.zip")
+        zip_path = os.path.join(get_temp_dir(), "bill_output.zip")
         try:
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 if os.path.exists(pdf_output):
@@ -869,8 +884,8 @@ if uploaded_file is not None and st.button("Generate Bill"):
                 # include individual PDFs and HTMLs for verification
                 for sheet_name in ["First Page", "Deviation Statement", "Note Sheet", "Last Page", "Extra Items"]:
                     base = sheet_name.replace(" ", "_")
-                    pdf_path = os.path.join(TEMP_DIR, f"{base}.pdf")
-                    html_path = os.path.join(TEMP_DIR, f"{base}.html")
+                    pdf_path = os.path.join(get_temp_dir(), f"{base}.pdf")
+                    html_path = os.path.join(get_temp_dir(), f"{base}.html")
                     if os.path.exists(pdf_path):
                         zipf.write(pdf_path, os.path.basename(pdf_path))
                     if os.path.exists(html_path):
@@ -890,7 +905,10 @@ if uploaded_file is not None and st.button("Generate Bill"):
 
         # Clean up temporary files
         try:
-            shutil.rmtree(TEMP_DIR)
+            temp_dir = get_temp_dir()
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                TEMP_DIR = None
         except Exception as e:
             st.warning(f"Failed to clean up temp directory: {str(e)}")
 
@@ -902,7 +920,7 @@ def run_cli(input_xlsx: str, premium_percent: float, premium_type: str, output_d
     import pandas as pd
     os.makedirs(output_dir, exist_ok=True)
     global TEMP_DIR
-    TEMP_DIR = output_dir
+    TEMP_DIR = output_dir  # For CLI mode, use the specified output directory
     xl = pd.ExcelFile(input_xlsx)
     ws_wo = xl.parse("Work Order", header=None)
     ws_bq = xl.parse("Bill Quantity", header=None)
